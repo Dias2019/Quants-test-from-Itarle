@@ -23,7 +23,6 @@ struct DataRows {
 	double time;
 };
 
-<<<<<<< HEAD
 
 // helper functions
 bool conditionCodeChecker(const std::string code) {
@@ -35,13 +34,13 @@ bool conditionCodeChecker(const std::string code) {
 	return true;
 }
 
-=======
+
 bool compareTime(const DataRows& a, const DataRows& b) {
 	if (a.date != b.date)
 		return a.secsPastMidnight < b.secsPastMidnight;
 	return a.secsPastMidnight < b.secsPastMidnight;
 }
->>>>>>> 95b73aa533c14dc5f5b1ce0ed599754e854b4d54
+
 
 
 class ScandiAnalysis {
@@ -72,7 +71,7 @@ void ScandiAnalysis::readCSV(const std::string& csvFilePath, std::map<std::strin
 	string line, word, temp;
 
 	int count = 0;
-	while (fin >> temp && count < 15000) {
+	while (fin >> temp && count < 1000) {
 
 		count++;
 
@@ -91,6 +90,8 @@ void ScandiAnalysis::readCSV(const std::string& csvFilePath, std::map<std::strin
 		temp.tradePrice = stod(row[4]); temp.date = stod(row[10]); temp.secsPastMidnight = stod(row[11]);
 		temp.conditionCodes = row[14]; temp.tradeVol = stod(row[7]);
 
+		dataframe[row[0]].push_back(temp);
+
 		// as we should filter out auction trades
 		if (isnotAuction(temp)) {
 			dataframe[row[0]].push_back(temp);
@@ -101,8 +102,9 @@ void ScandiAnalysis::readCSV(const std::string& csvFilePath, std::map<std::strin
 	for (auto& stock : dataframe) {
 		sort(stock.second.begin(), stock.second.end(), compareTime);
 	}
-
 }
+
+
 bool ScandiAnalysis::isnotAuction(const DataRows& data) {
 
 	if ((data.bidPrice > data.askPrice && (data.conditionCodes != "XT" || data.conditionCodes != "")) || data.bidPrice == 0 || data.askPrice == 0)
@@ -141,7 +143,7 @@ void ScandiAnalysis::meanTimeBetweenTrades(const std::map<std::string, std::vect
 		for (int i = 0; i < n; i++) {
 
 			// we verify if any trade has happened at that time by checking the volume of trades
-			if (i + 1 < n && stock.second[i].tradeVol > 0 && stock.second[i].date == stock.second[i+1].date) {
+			if (i + 1 < n && stock.second[i].tradeVol > 0 && stock.second[i].date == stock.second[i + 1].date) {
 				sum += (stock.second[i + 1].secsPastMidnight - stock.second[i].secsPastMidnight);
 				count += 1;
 			}
@@ -166,7 +168,7 @@ void ScandiAnalysis::medianTimeBetweenTrades(const std::map<std::string, std::ve
 		int n = stock.second.size();
 		for (int i = 0; i < n; i++) {
 
-			if (i + 1 < n && stock.second[i].tradeVol > 0 && stock.second[i].date == stock.second[i + 1].date) {
+			if (i + 1 < n && stock.second[i].tradeVol > 0 && stock.second[i].date == stock.second[i+1].date) {
 				timeDiff.push_back(stock.second[i + 1].secsPastMidnight - stock.second[i].secsPastMidnight);
 			}
 
@@ -174,7 +176,7 @@ void ScandiAnalysis::medianTimeBetweenTrades(const std::map<std::string, std::ve
 
 		sort(timeDiff.begin(), timeDiff.end());
 		if (n % 2 == 1)
-			cout << stock.first << ": " << (timeDiff[n / 2] + timeDiff[n / 2 + 1]) / 2 << endl;
+			cout << stock.first << ": " << (timeDiff[n/2] + timeDiff[n / 2 + 1]) / 2 << endl;
 		else
 			cout << stock.first << ": " << timeDiff[n / 2] << endl;
 	}
@@ -336,19 +338,24 @@ void medianTimeBetweenTick(const std::map<std::string, std::vector<DataRows>>& d
 
 int main() {
 
-
-
 	map<string, vector<DataRows>> dataframe;
 	string csvFilePath = "C:\\Users\\diaszhandar\\Downloads\\scandi.csv";
+	
+	ScandiAnalysis dataloader;
+	dataloader.readCSV(csvFilePath, dataframe);
 
-	ScandiAnalysis analysis;
-	analysis.readCSV(csvFilePath, dataframe);
-	analysis.checkStockCodes(dataframe);
-	analysis.meanTimeBetweenTrades(dataframe);
-	analysis.medianTimeBetweenTrades(dataframe);
-	analysis.longestTimeBetweenTrades(dataframe);
-	analysis.meanBidAskSpread(dataframe);
-	analysis.medianBidAskSpread(dataframe);
+	for (const auto& stock : dataframe) {
+
+		for (const auto& row : stock.second) {
+
+			cout << "BLBG code: " << stock.first << endl;
+			cout << "blm code: " << row.BloombergCode << endl;
+			cout << "bid price: " << row.bidPrice << endl;
+			cout << "ask price: " << row.askPrice << endl;
+			cout << endl;
+		}
+
+	}
 
 	return 0;
 }
