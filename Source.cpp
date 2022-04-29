@@ -5,9 +5,33 @@
 #include <string>
 #include <map>
 #include <algorithm>
+#include <numeric>
 
 
 using namespace std;
+
+
+struct Time
+{
+	double date;
+	double secondsPastMidnight;
+
+	Time(double date = 0, double secondsPastMidnight = 0)
+		: date(date), secondsPastMidnight(secondsPastMidnight)
+	{
+	}
+
+	Time operator-(const Time& a) const {
+		return Time(date - a.date, secondsPastMidnight - a.secondsPastMidnight);
+	}
+
+	bool operator<(const Time& a) const {
+		if (a.date != date)
+			return a.date < date;
+		return a.secondsPastMidnight < secondsPastMidnight;
+	}
+
+};
 
 
 struct DataRows {
@@ -18,27 +42,70 @@ struct DataRows {
 	double tradeVol;
 	double date;
 	double secsPastMidnight;
+	Time time;
 	string conditionCodes;
-
-	double time;
 };
 
 
 // helper functions
-bool conditionCodeChecker(const std::string code) {
-	
-	// return True if 
+bool conditionCodeChecker(const std::string code) { 
 	if (code.find("XT") != std::string::npos || code.compare("") != 0) {
 		return false;
 	}
 	return true;
 }
 
-
 bool compareTime(const DataRows& a, const DataRows& b) {
-	if (a.date != b.date)
-		return a.secsPastMidnight < b.secsPastMidnight;
-	return a.secsPastMidnight < b.secsPastMidnight;
+	return b.time < a.time;
+}
+
+bool isnotAuction(const DataRows& data) {
+	if (data.bidPrice > data.askPrice && (data.conditionCodes != "XT" || data.conditionCodes != ""))
+		return false;
+	return true;
+}
+
+void outlierDetection(std::vector<double>& time_between) {
+
+	int n = time_between.size();
+	int Nmod4 = n % 4;
+	int M, ML, MU;
+	double q2, q1, q3;
+
+	if (n == 0 || n == 1) return;
+
+	if (Nmod4 == 0) {
+		M = n / 2; ML = M / 2; MU = M + ML;
+		q1 = (time_between[ML] + time_between[ML - 1]) / 2;
+		q2 = (time_between[M] + time_between[M - 1]) / 2;
+		q3 = (time_between[MU] + time_between[MU - 1]) / 2;
+	}
+	else if (Nmod4 == 1) {
+		M = n / 2; ML = M / 2; MU = M + ML + 1;
+		q1 = (time_between[ML] + time_between[ML - 1]) / 2;
+		q2 = time_between[M];
+		q3 = (time_between[MU] + time_between[MU - 1]) / 2;
+	}
+	else if (Nmod4 == 2) {
+		M = n / 2; ML = M / 2; MU = M + ML;
+		q1 = time_between[ML];
+		q2 = (time_between[M] + time_between[M - 1]) / 2;
+		q3 = time_between[MU];
+	}
+	else {
+		M = n / 2; ML = M / 2; MU = M + ML + 1;
+		q1 = time_between[ML];
+		q2 = time_between[M];
+		q3 = time_between[MU];
+	}
+	
+	double IQR = q3 - q1;
+	double upperThreshold = 1.5 * IQR + q3;    // a threshold for defining suspected outlier
+
+	// any value greater than threshold is removed as outlier
+	while (time_between.size() > 0 && upperThreshold < time_between[time_between.size() - 1])
+		time_between.pop_back();
+
 }
 
 
@@ -46,7 +113,6 @@ bool compareTime(const DataRows& a, const DataRows& b) {
 class ScandiAnalysis {
 public:
 	void readCSV(const std::string& csvFilePath, std::map<std::string, std::vector<DataRows>>& dataframe);
-	bool isnotAuction(const DataRows& data);
 	void checkStockCodes(const std::map<std::string, std::vector<DataRows>>& dataframe);
 	void meanTimeBetweenTrades(const std::map<std::string, std::vector<DataRows>>& dataframe);
 	void medianTimeBetweenTrades(const std::map<std::string, std::vector<DataRows>>& dataframe);
@@ -55,23 +121,19 @@ public:
 	void longestTimeBetweenTrades(const std::map<std::string, std::vector<DataRows>>& dataframe);
 	void meanBidAskSpread(const std::map<std::string, std::vector<DataRows>>& dataframe);
 	void medianBidAskSpread(const std::map<std::string, std::vector<DataRows>>& dataframe);
-	vector<DataRows> getDataframe();
 
-private:
-	vector<DataRows> dataframe;
 };
 
 void ScandiAnalysis::readCSV(const std::string& csvFilePath, std::map<std::string, std::vector<DataRows>>& dataframe) {
 
 	fstream fin;
-
 	fin.open(csvFilePath, ios::in);
 
 	vector<string> row;
 	string line, word, temp;
 
 	int count = 0;
-	while (fin >> temp && count < 1000) {
+	while (fin >> temp && count < 50000) {
 
 		count++;
 
@@ -86,11 +148,10 @@ void ScandiAnalysis::readCSV(const std::string& csvFilePath, std::map<std::strin
 		}
 
 		DataRows temp;
-		temp.BloombergCode = row[0]; temp.bidPrice = stod(row[2]); temp.askPrice = stod(row[3]);
-		temp.tradePrice = stod(row[4]); temp.date = stod(row[10]); temp.secsPastMidnight = stod(row[11]);
-		temp.conditionCodes = row[14]; temp.tradeVol = stod(row[7]);
-
-		dataframe[row[0]].push_back(temp);
+		Time tmp(stod(row[10]), stod(row[11]));
+		temp.BloombergCode = row[0]; temp.bidPrice = stod(row[2]); temp.askPrice = stod(row[3]); temp.tradePrice = stod(row[4]);
+		temp.tradeVol = stod(row[7]); temp.time = tmp;
+		temp.conditionCodes = row[14];
 
 		// as we should filter out auction trades
 		if (isnotAuction(temp)) {
@@ -104,14 +165,6 @@ void ScandiAnalysis::readCSV(const std::string& csvFilePath, std::map<std::strin
 	}
 }
 
-
-bool ScandiAnalysis::isnotAuction(const DataRows& data) {
-
-	if ((data.bidPrice > data.askPrice && (data.conditionCodes != "XT" || data.conditionCodes != "")) || data.bidPrice == 0 || data.askPrice == 0)
-		return false;
-
-	return true;
-}
 
 
 void ScandiAnalysis::checkStockCodes(const std::map<std::string, std::vector<DataRows>>& dataframe) {
@@ -127,30 +180,28 @@ void ScandiAnalysis::checkStockCodes(const std::map<std::string, std::vector<Dat
 
 void ScandiAnalysis::meanTimeBetweenTrades(const std::map<std::string, std::vector<DataRows>>& dataframe) {
 
-	// exclude no trading periods 
-	// (time between first and last trade - no trading time) / number of trades
-
-
-
 	cout << "---Mean time between trades---" << endl;
 
-
 	for (const auto& stock : dataframe) {
-
-		double sum = 0;
-		int n = stock.second.size(), count = 0;
+		
+		vector<double> timeBetweenTrades;
+		int n = stock.second.size();
 
 		for (int i = 0; i < n; i++) {
 
 			// we verify if any trade has happened at that time by checking the volume of trades
-			if (i + 1 < n && stock.second[i].tradeVol > 0 && stock.second[i].date == stock.second[i + 1].date) {
-				sum += (stock.second[i + 1].secsPastMidnight - stock.second[i].secsPastMidnight);
-				count += 1;
+			if (i + 1 < n && stock.second[i].tradeVol > 0) {
+				Time timeDiff = stock.second[i + 1].time - stock.second[i].time;
+				timeBetweenTrades.push_back(timeDiff.date * 86400 + timeDiff.secondsPastMidnight);
 			}
 
 		}
 
-		cout << stock.first << ": " << (sum / count) << endl;
+		sort(timeBetweenTrades.begin(), timeBetweenTrades.end());
+		outlierDetection(timeBetweenTrades);
+
+		double meanTimeBetweenTrades = accumulate(timeBetweenTrades.begin(), timeBetweenTrades.end(), 0) / timeBetweenTrades.size();
+		cout << stock.first << ": " << meanTimeBetweenTrades << endl;
 
 	}
 
@@ -163,22 +214,29 @@ void ScandiAnalysis::medianTimeBetweenTrades(const std::map<std::string, std::ve
 
 	for (const auto& stock : dataframe) {
 
-		vector<double> timeDiff;
-
+		vector<double> timeBetweenTrades;
 		int n = stock.second.size();
+
 		for (int i = 0; i < n; i++) {
 
-			if (i + 1 < n && stock.second[i].tradeVol > 0 && stock.second[i].date == stock.second[i+1].date) {
-				timeDiff.push_back(stock.second[i + 1].secsPastMidnight - stock.second[i].secsPastMidnight);
+			if (i + 1 < n && stock.second[i].tradeVol > 0) {
+				Time timeDiff = stock.second[i + 1].time - stock.second[i].time;
+				timeBetweenTrades.push_back(timeDiff.date * 86400.0 + timeDiff.secondsPastMidnight);
 			}
 
 		}
 
-		sort(timeDiff.begin(), timeDiff.end());
-		if (n % 2 == 1)
-			cout << stock.first << ": " << (timeDiff[n/2] + timeDiff[n / 2 + 1]) / 2 << endl;
+		sort(timeBetweenTrades.begin(), timeBetweenTrades.end());
+		outlierDetection(timeBetweenTrades);
+
+		int updated_size = timeBetweenTrades.size();
+		double median;
+		if (updated_size % 2 == 1)
+			median = (timeBetweenTrades[updated_size / 2.0] + timeBetweenTrades[updated_size / 2.0 - 1]) / 2.0;
 		else
-			cout << stock.first << ": " << timeDiff[n / 2] << endl;
+			median = timeBetweenTrades[updated_size / 2.0];
+
+		cout << stock.first << ": " << median << endl;
 	}
 
 }
@@ -190,24 +248,35 @@ void ScandiAnalysis::longestTimeBetweenTrades(const std::map<std::string, std::v
 
 	for (const auto& stock : dataframe) {
 
-		vector<double> timeDiff;
-
+		vector<double> timeBetweenTrades;
 		int n = stock.second.size();
+
 		for (int i = 0; i < n; i++) {
 
-			if (i + 1 < n && stock.second[i].tradeVol > 0 && stock.second[i].date == stock.second[i + 1].date) {
-				timeDiff.push_back(stock.second[i + 1].secsPastMidnight - stock.second[i].secsPastMidnight);
+			if (i + 1 < n && stock.second[i].tradeVol > 0) {
+				Time timeDiff = stock.second[i + 1].time - stock.second[i].time;
+				timeBetweenTrades.push_back(timeDiff.date * 86400.0 + timeDiff.secondsPastMidnight);
 			}
 
 		}
 
-		double longest = *max_element(timeDiff.begin(), timeDiff.end());
-		cout << stock.first << ": " << longest << endl;
+		sort(timeBetweenTrades.begin(), timeBetweenTrades.end());
+		if (stock.first == "WRT1V FH Equity") {
+			for (auto x : timeBetweenTrades) {
+				cout << x << endl;
+			}
+		}
+
+		sort(timeBetweenTrades.begin(), timeBetweenTrades.end());
+		outlierDetection(timeBetweenTrades);
+
+		double longestTime = timeBetweenTrades[timeBetweenTrades.size() - 1];
+		cout << stock.first << ": " << longestTime << endl;
 	}
 
 }
 
-
+/*
 void ScandiAnalysis::meanBidAskSpread(const std::map<std::string, std::vector<DataRows>>& dataframe) {
 
 	cout << "---Mean bid ask spread---" << endl;
@@ -333,29 +402,34 @@ void medianTimeBetweenTick(const std::map<std::string, std::vector<DataRows>>& d
 
 	}
 
-}
+}*/
+
 
 
 int main() {
 
 	map<string, vector<DataRows>> dataframe;
 	string csvFilePath = "C:\\Users\\diaszhandar\\Downloads\\scandi.csv";
-	
-	ScandiAnalysis dataloader;
-	dataloader.readCSV(csvFilePath, dataframe);
 
-	for (const auto& stock : dataframe) {
+	ScandiAnalysis analysis;
+	analysis.readCSV(csvFilePath, dataframe);
+	analysis.medianTimeBetweenTrades(dataframe);
+	analysis.medianTimeBetweenTrades(dataframe);
+	analysis.longestTimeBetweenTrades(dataframe);
+
+
+	/*for (const auto& stock : dataframe) {
 
 		for (const auto& row : stock.second) {
 
 			cout << "BLBG code: " << stock.first << endl;
-			cout << "blm code: " << row.BloombergCode << endl;
-			cout << "bid price: " << row.bidPrice << endl;
-			cout << "ask price: " << row.askPrice << endl;
+			cout << "date: " << row.time.date << endl;
+			cout << "SAM: " << row.time.secondsPastMidnight << endl;
 			cout << endl;
 		}
 
-	}
+	}*/
 
 	return 0;
 }
+
